@@ -1,0 +1,72 @@
+services:
+  db:
+    image: mariadb:10.11
+    container_name: userhub_db
+    env_file:
+      - .env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "${DB_PORT}:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - userhub_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
+      start_period: 30s
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  api:
+    build:
+      context: ./userhub/backend
+      dockerfile: Dockerfile
+    container_name: userhub_api
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      PYTHONPATH: /app
+    ports:
+      - "${API_PORT}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - userhub_network
+    volumes:
+      - ./userhub/backend:/app
+    restart: on-failure
+    command: ["sh", "-c", "sleep 10 && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"]
+
+  frontend:
+    build:
+      context: ./userhub/frontend
+      dockerfile: Dockerfile
+    container_name: userhub_frontend
+    env_file:
+      - .env
+    ports:
+      - "${FRONTEND_PORT}:3000"
+    environment:
+      - REACT_APP_API_URL=${REACT_APP_API_URL}
+    depends_on:
+      - api
+    networks:
+      - userhub_network
+    volumes:
+      - ./userhub/frontend:/app
+      - /app/node_modules
+
+volumes:
+  db_data:
+
+networks:
+  userhub_network:
+    driver: bridge
