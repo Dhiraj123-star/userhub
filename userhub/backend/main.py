@@ -1,20 +1,49 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError
 from typing import List
 import models
 import schemas
 from database import SessionLocal, engine
+import time
+import logging
 
-# Create database tables
-models.Base.metadata.create_all(bind=engine)
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Wait for database to be ready and create tables
+def init_db():
+    max_retries = 30
+    retry_interval = 2
+    
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Attempting to connect to database (attempt {attempt + 1}/{max_retries})")
+            models.Base.metadata.create_all(bind=engine)
+            logger.info("Database tables created successfully")
+            break
+        except OperationalError as e:
+            if attempt == max_retries - 1:
+                logger.error(f"Failed to connect to database after {max_retries} attempts")
+                raise e
+            logger.warning(f"Database not ready, retrying in {retry_interval} seconds...")
+            time.sleep(retry_interval)
+
+# Initialize database
+init_db()
 
 app = FastAPI(title="UserHub API", version="1.0.0")
 
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://frontend:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://frontend:3000"
+    ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
