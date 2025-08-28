@@ -111,3 +111,11 @@ pids/
 
 # database dumps
 *.sql
+
+# SSL Certificates
+*.crt
+*.key
+*.pem
+*.csr
+certs/
+ssl/
