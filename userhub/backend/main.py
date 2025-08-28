@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
@@ -34,14 +34,23 @@ def init_db():
 # Initialize database
 init_db()
 
-app = FastAPI(title="UserHub API", version="1.0.0")
+# Create FastAPI app with custom docs URLs
+app = FastAPI(
+    title="UserHub API", 
+    version="1.0.0",
+    docs_url="/api/docs",        # Custom Swagger UI path
+    redoc_url="/api/redoc",      # Custom ReDoc path  
+    openapi_url="/api/openapi.json"  # Custom OpenAPI JSON path
+)
 
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
+        "http://localhost",
+        "https://localhost",
+        "http://127.0.0.1",
+        "https://127.0.0.1",
         "http://frontend:3000"
     ],
     allow_credentials=True,
@@ -57,11 +66,11 @@ def get_db():
     finally:
         db.close()
 
-@app.get("/")
+@app.get("/api")
 def read_root():
     return {"message": "Welcome to UserHub API"}
 
-@app.post("/users/", response_model=schemas.User)
+@app.post("/api/users/", response_model=schemas.User)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.email == user.email).first()
     if db_user:
@@ -77,19 +86,19 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db.refresh(db_user)
     return db_user
 
-@app.get("/users/", response_model=List[schemas.User])
+@app.get("/api/users/", response_model=List[schemas.User])
 def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     users = db.query(models.User).offset(skip).limit(limit).all()
     return users
 
-@app.get("/users/{user_id}", response_model=schemas.User)
+@app.get("/api/users/{user_id}", response_model=schemas.User)
 def read_user(user_id: int, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
     if db_user is None:
         raise HTTPException(status_code=404, detail="User not found")
     return db_user
 
-@app.put("/users/{user_id}", response_model=schemas.User)
+@app.put("/api/users/{user_id}", response_model=schemas.User)
 def update_user(user_id: int, user: schemas.UserUpdate, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
     if db_user is None:
@@ -106,7 +115,7 @@ def update_user(user_id: int, user: schemas.UserUpdate, db: Session = Depends(ge
     db.refresh(db_user)
     return db_user
 
-@app.delete("/users/{user_id}")
+@app.delete("/api/users/{user_id}")
 def delete_user(user_id: int, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
     if db_user is None:
@@ -115,3 +124,16 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
     db.delete(db_user)
     db.commit()
     return {"message": "User deleted successfully"}
+
+# ----------------------
+# WebSocket Support
+# ----------------------
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await websocket.send_text(f"Message received: {data}")
+    except WebSocketDisconnect:
+        logger.info("WebSocket client disconnected")
